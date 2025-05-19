@@ -139,10 +139,7 @@ G4VPhysicalVolume *DetectorConstruction::Construct(){ // we are defining here ou
 
     G4LogicalVolume* logicTankAssembly = new G4LogicalVolume(solidTankAssembly, worldMat, "logicTankAssembly");
 
-
-
     // we define the metallic shell as the result of a substraction
-
     G4Tubs* outerTube = new G4Tubs("outerTube",
                                0, (tankRadius + wallThickness),
                                0.5 * (tankHeight + wallThickness),  
@@ -208,6 +205,34 @@ G4VPhysicalVolume *DetectorConstruction::Construct(){ // we are defining here ou
                     0, 
                     checkOverlaps);
 
+
+    // PMTs construction
+
+    G4double pmtRadius = 11.5 * cm;
+    G4double pmtHeight = 1 * cm;
+
+    G4Tubs* solidPMT = new G4Tubs("solidPMT", 0., pmtRadius, 0.5 * pmtHeight, 0., 360.*deg);
+    G4LogicalVolume* logicPMT = new G4LogicalVolume(solidPMT, worldMat, "logicPMT");
+
+    G4double placementRadius = 0.75 * m;  // distance from the center to each PMT
+    G4double z_pos = 0.5 * (waterHeight + pmtHeight);
+
+    std::vector<G4ThreeVector> PMT_positions = {
+        G4ThreeVector( placementRadius, 0., z_pos),
+        G4ThreeVector(-0.5 * placementRadius,  0.866 * placementRadius, z_pos),
+        G4ThreeVector(-0.5 * placementRadius, -0.866 * placementRadius, z_pos)
+        };
+
+    for (size_t i = 0; i < PMT_positions.size(); ++i) {
+        new G4PVPlacement(0,
+                        PMT_positions[i],
+                        logicPMT,
+                        "physPMT",
+                        logicTankAssembly,  
+                        false,
+                        i,
+                        checkOverlaps);
+        }
     
     G4VisAttributes *waterVisAtt = new G4VisAttributes(G4Colour(0.2, 0.7, 1.0, 0.3));
     waterVisAtt->SetVisibility(true);
@@ -226,8 +251,14 @@ G4VPhysicalVolume *DetectorConstruction::Construct(){ // we are defining here ou
     assemblyVisAtt->SetVisibility(false);
     logicTankAssembly->SetVisAttributes(assemblyVisAtt);
 
+    G4VisAttributes* pmtVisAtt = new G4VisAttributes(G4Colour(1.0, 1.0, 1.0, 0.9)); // pure white
+    pmtVisAtt->SetVisibility(true);
+    pmtVisAtt->SetForceSolid(true);
+    pmtVisAtt->SetForceAuxEdgeVisible(true);
+    logicPMT->SetVisAttributes(pmtVisAtt);
 
     return physWorld;
-
-
 }
+
+
+
