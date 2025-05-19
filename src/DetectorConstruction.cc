@@ -1,24 +1,94 @@
 #include "DetectorConstruction.hh"
-#include "G4NistManager.hh"
-#include "G4Box.hh"
-#include "G4Tubs.hh"
-#include "G4LogicalVolume.hh"
-#include "G4PVPlacement.hh"
-#include "G4SystemOfUnits.hh"
-#include "G4PhysicalConstants.hh"
-#include "G4VisAttributes.hh"
-#include "G4Colour.hh"
 
+#include <fstream>
+#include <sstream>
+#include <numeric>  // for std::iota
+#include <algorithm> // for std::sort
 
-DetectorConstruction::DetectorConstruction(){
+DetectorConstruction::DetectorConstruction(){}
 
+DetectorConstruction::~DetectorConstruction(){}
 
+void DetectorConstruction::LoadOpticalPropertiesFromFile(
+    std::vector<G4double>& photonEnergies,
+    std::vector<G4double>& refractiveIndices,
+    std::vector<G4double>& absorptionLengths)
+{
+    std::ifstream file("../data/water_index.txt");
+    if (!file.is_open()) {
+        G4Exception("DetectorConstruction", "FileError", FatalException, "Could not open water_index.txt");
+        return;
+    }
+
+    std::string line;
+    std::map<G4double, G4double> n_map;
+    std::map<G4double, G4double> k_map;
+    bool readingN = false, readingK = false;
+
+    while (std::getline(file, line)) {
+        if (line.empty()) continue;
+
+        if (line.find("wl\tn") != std::string::npos) {
+            readingN = true;
+            readingK = false;
+            continue;
+        } else if (line.find("wl\tk") != std::string::npos) {
+            readingN = false;
+            readingK = true;
+            continue;
+        }
+
+        std::istringstream iss(line);
+        double wavelength_um, value;
+        if (!(iss >> wavelength_um >> value)) continue;
+
+        if (readingN) {
+            n_map[wavelength_um] = value;
+        } else if (readingK) {
+            k_map[wavelength_um] = value;
+        }
+    }
+
+    file.close();
+
+    // Combine both maps using only wavelengths present in both
+    for (const auto& [wavelength_um, n_val] : n_map) {
+        if (k_map.find(wavelength_um) == k_map.end()) continue;
+        double k_val = k_map[wavelength_um];
+
+        // Convert wavelength in μm to photon energy in eV
+        double wavelength_cm = wavelength_um * 1e-4;
+        double energy = (1.2398419843320026 / wavelength_um) * eV;  // energy in eV
+        photonEnergies.push_back(energy);
+        refractiveIndices.push_back(n_val);
+
+        // Compute absorption length from k: α = 4πk/λ → L = 1/α
+        double alpha = (4.0 * pi * k_val) / wavelength_cm; // in cm^-1
+        double absLength = 1.0 / alpha; // in cm
+        absorptionLengths.push_back(absLength * cm); // convert to G4 units
+    }
+
+    // Sort by increasing energy (required by Geant4)
+    std::vector<size_t> indices(photonEnergies.size());
+    std::iota(indices.begin(), indices.end(), 0);
+    std::sort(indices.begin(), indices.end(), [&](size_t a, size_t b) {
+        return photonEnergies[a] < photonEnergies[b];
+    });
+
+    auto reorder = [&](std::vector<G4double>& vec) {
+        std::vector<G4double> sorted;
+        for (size_t idx : indices) sorted.push_back(vec[idx]);
+        vec = std::move(sorted);
+    };
+
+    reorder(photonEnergies);
+    reorder(refractiveIndices);
+    reorder(absorptionLengths);
 }
 
-DetectorConstruction::~DetectorConstruction(){
 
-    
-}
+
+
 
 G4VPhysicalVolume *DetectorConstruction::Construct(){ // we are defining here our main function Construct
 
@@ -27,6 +97,25 @@ G4VPhysicalVolume *DetectorConstruction::Construct(){ // we are defining here ou
     G4NistManager *nist = G4NistManager::Instance();
     G4Material *worldMat = nist-> FindOrBuildMaterial("G4_AIR");
     G4Material *waterMat = nist -> FindOrBuildMaterial("G4_WATER");
+    G4Material *plasticMat = nist->FindOrBuildMaterial("G4_POLYETHYLENE");
+
+
+    // setting optical properties of the water to be pure water
+    G4MaterialPropertiesTable* waterMPT = new G4MaterialPropertiesTable();
+
+    std::vector<G4double> photonEnergies;
+    std::vector<G4double> rIndices;
+    std::vector<G4double> absLengths;
+    
+    LoadOpticalPropertiesFromFile(photonEnergies, rIndices, absLengths);
+
+    waterMPT->AddProperty("RINDEX", photonEnergies.data(), rIndices.data(), photonEnergies.size());
+    waterMPT->AddProperty("ABSLENGTH", photonEnergies.data(), absLengths.data(), photonEnergies.size());
+
+    waterMat->SetMaterialPropertiesTable(waterMPT);
+
+
+    // solid volumes definitions
 
     G4double xWorld = 5. * m;
     G4double yWorld = 5. * m;
@@ -36,22 +125,107 @@ G4VPhysicalVolume *DetectorConstruction::Construct(){ // we are defining here ou
     G4LogicalVolume *logicWorld = new G4LogicalVolume(solidWorld, worldMat, "logicWorld");
     G4VPhysicalVolume *physWorld = new G4PVPlacement(0, G4ThreeVector(0.,0.,0.), logicWorld, "physWorld", 0, false, 0, checkOverlaps);
     
-    G4double radius = 1.8 * m;
-    G4double height = 1.2 * m;
-    G4Tubs *solidTank = new G4Tubs("solidTank", 0., radius, 0.5 * height, 0., 360. *deg);
-    G4LogicalVolume *logicTank = new G4LogicalVolume(solidTank, waterMat, "logicTank");
-    
-    G4VisAttributes *tankVisAtt = new G4VisAttributes(G4Colour(0.2, 0.7, 1.0, 0.4));
-    tankVisAtt->SetVisibility(true);
-    tankVisAtt->SetForceSolid(true);
-    tankVisAtt->SetForceAuxEdgeVisible(true);
-    logicTank->SetVisAttributes(tankVisAtt);
+
+    // external metallic tank to hold the water
+    G4double tankRadius = 1.8 * m;
+    G4double tankHeight = 1.2 * m;
+    G4double wallThickness = 0.02 * m;
+
+    // Create a mother volume for the entire tank assembly
+    G4Tubs* solidTankAssembly = new G4Tubs("solidTankAssembly",
+                                          0., tankRadius +  wallThickness + 2. * mm,
+                                          0.5 * (tankHeight + wallThickness + 2. * mm),
+                                          0., 360.*deg);
+
+    G4LogicalVolume* logicTankAssembly = new G4LogicalVolume(solidTankAssembly, worldMat, "logicTankAssembly");
+
+
+
+    // we define the metallic shell as the result of a substraction
+
+    G4Tubs* outerTube = new G4Tubs("outerTube",
+                               0, (tankRadius + wallThickness),
+                               0.5 * (tankHeight + wallThickness),  
+                               0, 360. * deg);
+
+    G4Tubs* innerTube = new G4Tubs("innerTube",
+                               0, tankRadius,
+                               0.5 * tankHeight , 
+                               0.0, 360. * deg);
+
+    G4SubtractionSolid* solidTank = new G4SubtractionSolid("solidTank", outerTube, innerTube);
+
+
+    G4LogicalVolume* logicTank = new G4LogicalVolume(solidTank, plasticMat, "logicTank");
 
     // Rotation of 90 degrees to place the prism in the g4 axis definition
     auto rotation = new G4RotationMatrix();
     rotation->rotateX(90.*deg);
+
+    // Place the entire assembly in the world
+    new G4PVPlacement(rotation, 
+                    G4ThreeVector(0., 0., 0.), 
+                    logicTankAssembly, 
+                    "physTankAssembly", 
+                    logicWorld, 
+                    false, 
+                    0, 
+                    checkOverlaps);
+
+    // Place the steel tank shell inside the assembly
+    new G4PVPlacement(0, 
+                    G4ThreeVector(0., 0., 0.), 
+                    logicTank,           
+                    "physTank", 
+                    logicTankAssembly,  
+                    false, 
+                    0, 
+                    checkOverlaps);
+
+    // internal water tub. height computed from the water volume
+
+    // 12000 L water = 12 m^3 
+    // V = pi * r^2 * h -> h = V / (pi * r^2)
+    // h = 12 / (pi * 1.8^2) = 1.179 m
+
+    G4double waterHeight = 1.179 * m;
+
+    G4Tubs* solidWater = new G4Tubs("solidWater", 
+                            0., tankRadius - 1.*mm,
+                            0.5 * waterHeight, 
+                            0., 360.*deg);
+
+    G4LogicalVolume* logicWater = new G4LogicalVolume(solidWater, waterMat, "logicWater");
+
+    G4double zOffset = - 0.5 * (tankHeight - waterHeight) ;
     
-    new G4PVPlacement(rotation, G4ThreeVector(0., 0., 0.), logicTank, "physTank", logicWorld, false, 0, checkOverlaps);    
+    new G4PVPlacement(0, 
+                    G4ThreeVector(0., 0., zOffset), 
+                    logicWater, 
+                    "physWater", 
+                    logicTankAssembly, 
+                    false, 
+                    0, 
+                    checkOverlaps);
+
+    
+    G4VisAttributes *waterVisAtt = new G4VisAttributes(G4Colour(0.2, 0.7, 1.0, 0.3));
+    waterVisAtt->SetVisibility(true);
+    waterVisAtt->SetForceSolid(true);
+    waterVisAtt->SetForceAuxEdgeVisible(true);
+    logicWater->SetVisAttributes(waterVisAtt);
+
+    G4VisAttributes* tankVisAtt = new G4VisAttributes(G4Colour(0.5, 0.5, 0.5, 0.6)); // greyish
+    tankVisAtt->SetVisibility(true);
+    tankVisAtt->SetForceSolid(true);
+    tankVisAtt->SetForceAuxEdgeVisible(true);
+    logicTank ->SetVisAttributes(tankVisAtt);
+
+    // make the assembly invisible
+    G4VisAttributes* assemblyVisAtt = new G4VisAttributes();
+    assemblyVisAtt->SetVisibility(false);
+    logicTankAssembly->SetVisAttributes(assemblyVisAtt);
+
 
     return physWorld;
 
