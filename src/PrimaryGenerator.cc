@@ -38,20 +38,24 @@ void PrimaryGenerator::GeneratePrimaries(G4Event *anEvent){
     G4double phi1 = 2. * pi * G4UniformRand();
     
     G4double x = r * std::cos(phi1);
-    G4double y = r * std::sin(phi1);
-    G4double z = 1.5 * m;
+    G4double z = r * std::sin(phi1);
+    G4double y = 1.5 * m;
 
     G4ThreeVector pos(x, y, z);
     fParticleGun->SetParticlePosition(pos);
 
     // Particle direction
     
-    G4double theta = std::acos(G4UniformRand());
+    G4double theta;
+    do {
+        theta = std::acos(G4UniformRand());
+    } while (G4UniformRand() > std::pow(std::cos(theta), 2));
+    
     G4double phi2 = 2. * pi * G4UniformRand();
 
     G4double px = std::sin(theta) * std::cos(phi2); 
-    G4double py = std::sin(theta) * std::sin(phi2); 
-    G4double pz = -std::cos(theta);  // we make sure the particle is forwared in z negative direction
+    G4double pz = std::sin(theta) * std::sin(phi2); 
+    G4double py = -std::cos(theta);  // we make sure the particle is forwared in y negative direction
 
     G4ThreeVector mom(px,py,pz);
     fParticleGun->SetParticleMomentumDirection(mom);
