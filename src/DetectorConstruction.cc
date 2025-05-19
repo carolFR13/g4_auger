@@ -46,13 +46,12 @@ G4VPhysicalVolume *DetectorConstruction::Construct(){ // we are defining here ou
     tankVisAtt->SetForceSolid(true);
     tankVisAtt->SetForceAuxEdgeVisible(true);
     logicTank->SetVisAttributes(tankVisAtt);
+
+    // Rotation of 90 degrees to place the prism in the g4 axis definition
+    auto rotation = new G4RotationMatrix();
+    rotation->rotateX(90.*deg);
     
-    G4RotationMatrix *rotY = new G4RotationMatrix();
-    rotY->rotateX(90. * deg);
-    
-    
-    new G4PVPlacement(rotY, G4ThreeVector(0., 0., 0.), logicTank, "physTank", logicWorld, false, 0, checkOverlaps);
-    
+    new G4PVPlacement(rotation, G4ThreeVector(0., 0., 0.), logicTank, "physTank", logicWorld, false, 0, checkOverlaps);    
 
     return physWorld;
 
