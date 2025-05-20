@@ -219,7 +219,6 @@ G4VPhysicalVolume *DetectorConstruction::Construct(){ // we are defining here ou
 
 
     // PMTs construction
-
     G4double pmtRadius = 11.5 * cm;
     G4double pmtHeight = 1 * cm;
 
@@ -245,26 +244,25 @@ G4VPhysicalVolume *DetectorConstruction::Construct(){ // we are defining here ou
                         i,
                         checkOverlaps);      
         }
-
-
-    auto* pmtSurface = new G4OpticalSurface("WaterToPMTSurface");
-    pmtSurface->SetType(dielectric_metal);
-    pmtSurface->SetFinish(polished);
-    pmtSurface->SetModel(glisur);
-
-    // Define arrays for optical properties
-    const G4int NUM_ENTRIES = 2;
-    G4double photonEnergy[NUM_ENTRIES] = {2.0*eV, 4.0*eV};
-    G4double reflectivity[NUM_ENTRIES] = {0.9, 0.9};
-    G4double efficiency[NUM_ENTRIES] = {0.8, 0.8};
-
-    auto* surfaceMPT = new G4MaterialPropertiesTable();
-    surfaceMPT->AddProperty("REFLECTIVITY", photonEnergy, reflectivity, NUM_ENTRIES);
-    surfaceMPT->AddProperty("EFFICIENCY", photonEnergy, efficiency, NUM_ENTRIES);
     
-    pmtSurface->SetMaterialPropertiesTable(surfaceMPT);
+    // Define the optical surface between the water and the tank
 
-    new G4LogicalSkinSurface("PMTSurface", flogicPMT, pmtSurface);
+    auto* wallSurface = new G4OpticalSurface("WallReflector");
+    wallSurface->SetType(dielectric_dielectric); 
+    wallSurface->SetModel(unified);
+    wallSurface->SetFinish(groundfrontpainted);
+
+    auto* wallMPT = new G4MaterialPropertiesTable();
+    G4double wall_energies[2]      = {2.0 * eV, 4.0 * eV};
+    G4double wall_reflectivity[2]  = {0.98, 0.98};  // high reflectivity
+    G4double wall_efficiency[2]    = {0.0, 0.0};    
+
+    wallMPT->AddProperty("REFLECTIVITY", wall_energies, wall_reflectivity, 2);
+    wallMPT->AddProperty("EFFICIENCY", wall_energies, wall_efficiency, 2);
+    wallSurface->SetMaterialPropertiesTable(wallMPT);
+
+    new G4LogicalSkinSurface("TankWallSurface", logicTank, wallSurface);
+
     
     G4VisAttributes *waterVisAtt = new G4VisAttributes(G4Colour(0.2, 0.7, 1.0, 0.3));
     waterVisAtt->SetVisibility(true);

@@ -17,6 +17,10 @@ class SensitiveDetector : public G4VSensitiveDetector{
     private:
 
         G4double fTotalEnergyDeposited;
+        G4int fPhotonCount = 0;
+        std::map<G4int, G4int> fPMTCounts;
+
+
 
         // HC : hits collection only important if you want to do analysis
         // or reconstraction within G4
