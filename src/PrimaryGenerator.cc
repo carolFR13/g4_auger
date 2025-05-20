@@ -31,37 +31,46 @@ PrimaryGenerator::~PrimaryGenerator(){
 
 void PrimaryGenerator::GeneratePrimaries(G4Event *anEvent){
 
-    // Particle position
-
-    G4double radius = 2.0 * m;
-    G4double r = radius * std::sqrt(G4UniformRand());
-    G4double phi1 = 2. * pi * G4UniformRand();
+    // Particle position: circle of radius 2m in the xz plane at y = 1.5m
+    // G4double radius = 2.0 * m;
+    // G4double r = radius * std::sqrt(G4UniformRand());
+    // G4double phi1 = 2. * pi * G4UniformRand();
     
-    G4double x = r * std::cos(phi1);
-    G4double z = r * std::sin(phi1);
-    G4double y = 1.5 * m;
+    // G4double x = r * std::cos(phi1);
+    // G4double z = r * std::sin(phi1);
+    // G4double y = 1.5 * m;
+
+
+
+    // Particle position: spherical casquette of radius 2m
+
+    G4double r = 1.5 * m; // constant
+    G4double theta = 0.5 * pi * G4UniformRand();  // from 0 to pi/2
+    G4double phi = 2.0 * pi * G4UniformRand();  // from 0 to 2pi
+
+    G4double x = r * std::sin(theta) * std::cos(phi);
+    G4double z = r * std::sin(theta) * std::sin(phi);
+    G4double y = r * std::cos(theta);
 
     G4ThreeVector pos(x, y, z);
     fParticleGun->SetParticlePosition(pos);
 
+
     // Particle direction
-    
-    G4double theta;
+    G4double theta_mom;
     do {
-        theta = std::acos(G4UniformRand());
-    } while (G4UniformRand() > std::pow(std::cos(theta), 2));
+        theta_mom = std::acos(G4UniformRand());
+    } while (G4UniformRand() > std::pow(std::cos(theta_mom), 2));
     
-    G4double phi2 = 2. * pi * G4UniformRand();
+    G4double phi_mom = 2. * pi * G4UniformRand();
 
-    G4double px = std::sin(theta) * std::cos(phi2); 
-    G4double pz = std::sin(theta) * std::sin(phi2); 
-    G4double py = -std::cos(theta);  // we make sure the particle is forwared in y negative direction
-
+    G4double px = std::sin(theta_mom) * std::cos(phi_mom);
+    G4double pz = std::sin(theta_mom) * std::sin(phi_mom);
+    G4double py = -std::cos(theta_mom);  // negativo: dirección hacia abajo
     G4ThreeVector mom(px,py,pz);
     fParticleGun->SetParticleMomentumDirection(mom);
 
     // Create vertex
-
     fParticleGun -> GeneratePrimaryVertex(anEvent);
     
 }

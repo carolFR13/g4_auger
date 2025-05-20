@@ -1,5 +1,4 @@
 /run/initialize
-/tracking/verbose 1
 
 /vis/open OGL 600x600-0+0
 
@@ -12,7 +11,7 @@
 /vis/scene/add/trajectories rich
 
 /vis/scene/add/hits
-/vis/scene/endOfEventAction accumulate 10
+/vis/scene/endOfEventAction accumulate 1
 /vis/scene/add/axes
 /vis/scene/add/eventID
 
