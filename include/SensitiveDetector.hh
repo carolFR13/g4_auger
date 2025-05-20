@@ -5,6 +5,8 @@
 #include "G4SystemOfUnits.hh"
 #include "G4UnitsTable.hh"
 
+#include "G4OpticalPhoton.hh"
+
 class SensitiveDetector : public G4VSensitiveDetector{
 
 

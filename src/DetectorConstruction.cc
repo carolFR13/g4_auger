@@ -5,7 +5,9 @@
 #include <numeric>  // for std::iota
 #include <algorithm> // for std::sort
 
-DetectorConstruction::DetectorConstruction(){}
+DetectorConstruction::DetectorConstruction()
+: flogicPMT(nullptr)
+{}
 
 DetectorConstruction::~DetectorConstruction(){}
 
@@ -86,6 +88,35 @@ void DetectorConstruction::LoadOpticalPropertiesFromFile(
     reorder(absorptionLengths);
 }
 
+void DetectorConstruction::DefineMaterials() {
+    auto* nist = G4NistManager::Instance();
+
+    worldMat = nist->FindOrBuildMaterial("G4_AIR");
+    waterMat = nist->FindOrBuildMaterial("G4_WATER");
+    plasticMat = nist->FindOrBuildMaterial("G4_POLYETHYLENE");
+    glassMat = nist->FindOrBuildMaterial("G4_GLASS_PLATE");
+
+    // setting optical properties of the water to be pure water
+    G4MaterialPropertiesTable* waterMPT = new G4MaterialPropertiesTable();
+
+    std::vector<G4double> energies;
+    std::vector<G4double> rindices;
+    std::vector<G4double> absLengths;
+
+    LoadOpticalPropertiesFromFile(energies, rindices, absLengths); // ya lo tienes hecho
+
+    waterMPT->AddProperty("RINDEX", energies.data(), rindices.data(), energies.size());
+    waterMPT->AddProperty("ABSLENGTH", energies.data(), absLengths.data(), energies.size());
+
+    waterMat->SetMaterialPropertiesTable(waterMPT);
+
+    // optical propierties for air (constant)
+    G4MaterialPropertiesTable* airMPT = new G4MaterialPropertiesTable();
+    G4double rAir[2] = {1.0, 1.0};
+    G4double eAir[2] = {2.0 * eV, 4.0 * eV};
+    airMPT->AddProperty("RINDEX", eAir, rAir, 2);
+    worldMat->SetMaterialPropertiesTable(airMPT);
+}
 
 
 
@@ -94,26 +125,7 @@ G4VPhysicalVolume *DetectorConstruction::Construct(){ // we are defining here ou
 
     G4bool checkOverlaps = true;
 
-    G4NistManager *nist = G4NistManager::Instance();
-    G4Material *worldMat = nist-> FindOrBuildMaterial("G4_AIR");
-    G4Material *waterMat = nist -> FindOrBuildMaterial("G4_WATER");
-    G4Material *plasticMat = nist->FindOrBuildMaterial("G4_POLYETHYLENE");
-
-
-    // setting optical properties of the water to be pure water
-    G4MaterialPropertiesTable* waterMPT = new G4MaterialPropertiesTable();
-
-    std::vector<G4double> photonEnergies;
-    std::vector<G4double> rIndices;
-    std::vector<G4double> absLengths;
-    
-    LoadOpticalPropertiesFromFile(photonEnergies, rIndices, absLengths);
-
-    waterMPT->AddProperty("RINDEX", photonEnergies.data(), rIndices.data(), photonEnergies.size());
-    waterMPT->AddProperty("ABSLENGTH", photonEnergies.data(), absLengths.data(), photonEnergies.size());
-
-    waterMat->SetMaterialPropertiesTable(waterMPT);
-
+    DefineMaterials(); // we define the materials we are going to use
 
     // solid volumes definitions
 
@@ -212,7 +224,7 @@ G4VPhysicalVolume *DetectorConstruction::Construct(){ // we are defining here ou
     G4double pmtHeight = 1 * cm;
 
     G4Tubs* solidPMT = new G4Tubs("solidPMT", 0., pmtRadius, 0.5 * pmtHeight, 0., 360.*deg);
-    G4LogicalVolume* logicPMT = new G4LogicalVolume(solidPMT, worldMat, "logicPMT");
+    flogicPMT = new G4LogicalVolume(solidPMT, worldMat, "logicPMT");
 
     G4double placementRadius = 0.75 * m;  // distance from the center to each PMT
     G4double z_pos = 0.5 * (waterHeight + pmtHeight);
@@ -226,13 +238,33 @@ G4VPhysicalVolume *DetectorConstruction::Construct(){ // we are defining here ou
     for (size_t i = 0; i < PMT_positions.size(); ++i) {
         new G4PVPlacement(0,
                         PMT_positions[i],
-                        logicPMT,
+                        flogicPMT,
                         "physPMT",
                         logicTankAssembly,  
                         false,
                         i,
-                        checkOverlaps);
+                        checkOverlaps);      
         }
+
+
+    auto* pmtSurface = new G4OpticalSurface("WaterToPMTSurface");
+    pmtSurface->SetType(dielectric_metal);
+    pmtSurface->SetFinish(polished);
+    pmtSurface->SetModel(glisur);
+
+    // Define arrays for optical properties
+    const G4int NUM_ENTRIES = 2;
+    G4double photonEnergy[NUM_ENTRIES] = {2.0*eV, 4.0*eV};
+    G4double reflectivity[NUM_ENTRIES] = {0.9, 0.9};
+    G4double efficiency[NUM_ENTRIES] = {0.8, 0.8};
+
+    auto* surfaceMPT = new G4MaterialPropertiesTable();
+    surfaceMPT->AddProperty("REFLECTIVITY", photonEnergy, reflectivity, NUM_ENTRIES);
+    surfaceMPT->AddProperty("EFFICIENCY", photonEnergy, efficiency, NUM_ENTRIES);
+    
+    pmtSurface->SetMaterialPropertiesTable(surfaceMPT);
+
+    new G4LogicalSkinSurface("PMTSurface", flogicPMT, pmtSurface);
     
     G4VisAttributes *waterVisAtt = new G4VisAttributes(G4Colour(0.2, 0.7, 1.0, 0.3));
     waterVisAtt->SetVisibility(true);
@@ -255,10 +287,25 @@ G4VPhysicalVolume *DetectorConstruction::Construct(){ // we are defining here ou
     pmtVisAtt->SetVisibility(true);
     pmtVisAtt->SetForceSolid(true);
     pmtVisAtt->SetForceAuxEdgeVisible(true);
-    logicPMT->SetVisAttributes(pmtVisAtt);
+    flogicPMT->SetVisAttributes(pmtVisAtt);
 
     return physWorld;
 }
 
 
+void DetectorConstruction::ConstructSDandField(){
 
+    G4cout << "Constructing sensitive detectors..." << G4endl;
+
+    if(flogicPMT != nullptr) {
+        G4SDManager *sdManager = G4SDManager::GetSDMpointer();
+        SensitiveDetector *sensDet = new SensitiveDetector("SensitiveDetector");
+        sdManager->AddNewDetector(sensDet);
+        flogicPMT->SetSensitiveDetector(sensDet);
+        G4cout << "Sensitive detector set for logicDetector" << G4endl;
+
+    } else {
+        G4cerr << "Error: logicPMT is null in ConstructSDandField" << G4endl;
+    }
+    
+}
